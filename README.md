@@ -992,3 +992,560 @@ void leave(int sig)
 
 ```
 ---
+
+### Question 30
+**Implement a) Binary Semaphore b) Counting Semaphore.**
+**Binary Semaphore.**
+```c
+#include <stdio.h>
+#include <pthread.h>
+#include <semaphore.h>
+int a, b;
+sem_t sem;
+void ScanNumbers(void *ptr){
+    for (;;){
+        printf("%s", (char *)ptr);
+        scanf("%d %d", &a, &b);
+        sem_post(&sem);
+        usleep(100 * 10);
+    }
+}
+void SumAndPrint(void *ptr){
+    for (;;){
+        sem_wait(&sem);
+        printf("%s %d\n", (char *)ptr, a + b);
+    }
+}
+int main()
+{
+    pthread_t thread1;
+    pthread_t thread2;
+    char *Msg1 = "Enter The Two Numbers : \n";
+    char *Msg2 = "sum = ";
+    sem_init(&sem, 0, 0);
+    pthread_create(&thread1, NULL, (void *)ScanNumbers, (void *)Msg1);
+    pthread_create(&thread2, NULL, (void *)SumAndPrint, (void *)Msg2);
+    pthread_join(thread1, NULL);
+    pthread_join(thread2, NULL);
+    printf("Wait For Both Thread Finished\n");
+    sem_destroy(&sem);
+    return 0;
+}
+
+```
+**Counting Semaphore.**
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <unistd.h>
+#include <time.h>
+#define NO_OF_QUEUE 5 /* #of Students in queue */
+#define NO_OF_SLOTS 3 /* Lab Capacity */
+int Q[NO_OF_SLOTS];
+int front = -1;
+int rear = -1;
+int c = 0; /*Counting sem*/
+pthread_mutex_t mutex;
+sem_t full;
+sem_t empty;
+void *Supervisor(void *arg){
+    while( c < -5) { /* Supervisor limit */
+        int student = (int)arg;
+        pthread_detach(pthread_self());
+        sem_wait(&empty);
+        pthread_mutex_lock(&mutex);
+        rear = rear + 1;
+        if (rear >= NO_OF_SLOTS){
+            rear = 0;
+        }
+        Q[rear] = student;
+        printf("%4d.Student was called to the presentation \n", student+1);
+        pthread_mutex_unlock(&mutex);
+        sem_post(&full);
+    }
+    c--;
+    printf(" Counting value c after decremented by Supervisor : %d\n",c);
+}
+void *Student(void *arg){
+    int student = 0;
+    int studentRemoved= 0;
+    printf("Presentations started \n");
+    while (studentRemoved < NO_OF_QUEUE){
+        sem_wait(&full);
+        pthread_mutex_lock(&mutex);
+        front = front + 1;
+        if (front >= NO_OF_SLOTS ) front = 0;
+        student = Q[front];
+        printf("%4d. Student is done. He was removed from the queue \n", student+1);
+        studentRemoved++;
+        pthread_mutex_unlock(&mutex);
+        sem_post(&empty);
+        c++;
+        printf("Counting value after the c incremented by the Student : %d \n",c);
+        usleep((int)(drand48()*500000));
+    }
+}
+int main(int argc,char *argv[]){
+    int i;
+    pthread_t supervisorid;
+    pthread_t queueId;
+    srand48(time(NULL));
+    pthread_mutex_init(&mutex,NULL);
+    sem_init(&full, 0, 5);
+    sem_init(&empty, 0, NO_OF_SLOTS);
+    /* Supervisor Thread */
+    pthread_create(&queueId, NULL, Student, NULL);
+    for(i=0; i < NO_OF_QUEUE;i++){
+        pthread_create(&supervisorid, NULL, Supervisor , (void *)i);
+    }
+    pthread_join(queueId, NULL);
+}
+```
+---
+
+
+### Question 31
+**Write a program to demonstrate the implementation of Producer and Consumer problem**
+```c
+#include <pthread.h>
+#include <semaphore.h>
+#include <stdlib.h>
+#include <stdio.h>
+#define MaxItems 5 // Maximum items a producer can produce or a consumer can consume
+#define BufferSize 5 // Size of the buffer
+sem_t empty;
+sem_t full;
+int in = 0;
+int out = 0;
+int buffer[BufferSize];
+pthread_mutex_t mutex;
+void *producer(void *pno)
+{
+    int item;
+    for(int i = 0; i < MaxItems; i++) {
+        item = rand() % 100; // Produce an random item
+        sem_wait(&empty);
+        pthread_mutex_lock(&mutex);
+        buffer[in] = item;
+        printf("Producer %d: Insert Item %d at %d\n", *((int *)pno),buffer[in],in);
+        in = (in+1)%BufferSize;
+        pthread_mutex_unlock(&mutex);
+        sem_post(&full);
+    }
+}
+void *consumer(void *cno)
+{
+    for(int i = 0; i < MaxItems; i++) {
+        sem_wait(&full);
+        pthread_mutex_lock(&mutex);
+        int item = buffer[out];
+        printf("Consumer %d: Remove Item %d from %d\n",*((int *)cno),item, out);
+        out = (out+1)%BufferSize;
+        pthread_mutex_unlock(&mutex);
+        sem_post(&empty);
+    }
+}
+int main()
+{
+    pthread_t pro[5],con[5];
+    pthread_mutex_init(&mutex, NULL);
+    sem_init(&empty,0,BufferSize);
+    sem_init(&full,0,0);
+    int a[5] = {1,2,3,4,5}; //Just used for numbering the producer and consumer
+    for(int i = 0; i < 5; i++) {
+        pthread_create(&pro[i], NULL, (void *)producer, (void *)&a[i]);
+    }
+    for(int i = 0; i < 5; i++) {
+        pthread_create(&con[i], NULL, (void *)consumer, (void *)&a[i]);
+    }
+    for(int i = 0; i < 5; i++) {
+        pthread_join(pro[i], NULL);
+    }
+    for(int i = 0; i < 5; i++) {
+        pthread_join(con[i], NULL);
+    }
+    pthread_mutex_destroy(&mutex);
+    sem_destroy(&empty);
+    sem_destroy(&full);
+    return 0;
+}
+
+```
+---
+
+
+### Question 32
+**Write a program to implement Reader – Writer’s problem.**
+```c
+#include <pthread.h>
+#include <semaphore.h>
+#include <stdio.h>
+sem_t wrt;
+pthread_mutex_t mutex;
+int cnt = 1;
+int numreader = 0;
+void *writer(void *wno)
+{
+    sem_wait(&wrt);
+    cnt = cnt*2;
+    printf("Writer %d: modified count to %d\n",(*((int *)wno)),cnt);
+    sem_post(&wrt);
+}
+void *reader(void *rno)
+{
+    pthread_mutex_lock(&mutex);
+    numreader++;
+    if(numreader == 1) {
+        sem_wait(&wrt);
+    }
+    pthread_mutex_unlock(&mutex);
+    printf("Reader %d: read count as %d\n",*((int *)rno),cnt);
+    pthread_mutex_lock(&mutex);
+    numreader--;
+    if(numreader == 0) {
+        sem_post(&wrt);
+    }
+    pthread_mutex_unlock(&mutex);
+}
+int main()
+{
+    pthread_t read[10],write[5];
+    pthread_mutex_init(&mutex, NULL);
+    sem_init(&wrt,0,1);
+    int a[10] = {1,2,3,4,5,6,7,8,9,10};
+    for(int i = 0; i < 10; i++) {
+        pthread_create(&read[i], NULL, (void *)reader, (void *)&a[i]);
+    }
+    for(int i = 0; i < 5; i++) {
+        pthread_create(&write[i], NULL, (void *)writer, (void *)&a[i]);
+    }
+    for(int i = 0; i < 10; i++) {
+        pthread_join(read[i], NULL);
+    }
+    for(int i = 0; i < 5; i++) {
+        pthread_join(write[i], NULL);
+    }
+    pthread_mutex_destroy(&mutex);
+    sem_destroy(&wrt);
+    return 0;
+}
+
+```
+---
+
+
+### Question 33
+**Write a program to implement Dining Philosopher’s problem. Implement Banker’s algorithm.**
+**Dining Plilosopher**
+```c
+#include<stdio.h>
+
+#define n 4
+int compltedPhilo = 0, i;
+struct fork {
+    int taken;
+}
+ForkAvil[n];
+struct philosp {
+    int left;
+    int right;
+}
+Philostatus[n];
+void goForDinner(int philID) {
+    if (Philostatus[philID].left == 10 && Philostatus[philID].right == 10)
+        printf("Philosopher %d completed his dinner\n", philID + 1);
+    else if (Philostatus[philID].left == 1 && Philostatus[philID].right == 1) {
+        printf("Philosopher %d completed his dinner\n", philID + 1);
+        Philostatus[philID].left = Philostatus[philID].right = 10;
+        int otherFork = philID - 1;
+        if (otherFork == -1)
+            otherFork = (n - 1);
+        ForkAvil[philID].taken = ForkAvil[otherFork].taken = 0;
+        printf("Philosopher %d released fork %d and fork%d\n", philID + 1, philID + 1, otherFork + 1);
+        compltedPhilo++;
+    }
+    else if (Philostatus[philID].left == 1 && Philostatus[philID].right == 0) {
+        if (philID == (n - 1)) {
+            if (ForkAvil[philID].taken == 0) {
+                ForkAvil[philID].taken = Philostatus[philID].right = 1;
+                printf("Fork %d taken by philosopher %d\n", philID + 1, philID + 1);
+            } else {
+                printf("Philosopher %d is waiting for fork %d\n", philID + 1, philID + 1);
+            }
+        } else {
+            int dupphilID = philID;
+            philID -= 1;
+            if (philID == -1)
+                philID = (n - 1);
+            if (ForkAvil[philID].taken == 0) {
+                ForkAvil[philID].taken = Philostatus[dupphilID].right = 1;
+                printf("Fork %d taken by Philosopher %d\n", philID + 1, dupphilID + 1);
+            } else {
+                printf("Philosopher %d is waiting for Fork %d\n", dupphilID + 1, philID + 1);
+            }
+        }
+    }
+    else if (Philostatus[philID].left == 0) {
+        if (philID == (n - 1)) {
+            if (ForkAvil[philID - 1].taken == 0) {
+                ForkAvil[philID - 1].taken = Philostatus[philID].left = 1;
+                printf("Fork %d taken by philosopher %d\n", philID, philID + 1);
+            } else {
+                printf("Philosopher %d is waiting for fork %d\n", philID + 1, philID);
+            }
+        } else {
+            if (ForkAvil[philID].taken == 0) {
+                ForkAvil[philID].taken = Philostatus[philID].left = 1;
+                printf("Fork %d taken by Philosopher %d\n", philID + 1, philID + 1);
+            } else {
+                printf("Philosopher %d is waiting for Fork %d\n", philID + 1, philID + 1);
+            }
+        }
+    }
+}
+int main() {
+    for (i = 0; i < n; i++)
+        ForkAvil[i].taken = Philostatus[i].left = Philostatus[i].right = 0;
+    while (compltedPhilo < n) {
+        for (i = 0; i < n; i++)
+            goForDinner(i);
+        printf("\nTill now no. of philosophers completed dinner are: %d\n\n", compltedPhilo);
+    }
+    return 0;
+}
+
+```
+**Banker**
+```c
+#include <stdio.h>
+int main() {
+    int Max[10][10], need[10][10], alloc[10][10], avail[10], completed[10], safeSequence[10];
+    int p, r, i, j, process, count;
+    count = 0;
+    printf("Enter the no of processes : ");
+    scanf("%d", & p);
+    for (i = 0; i < p; i++)
+        completed[i] = 0;
+    printf("\n\nEnter the no of resources : ");
+    scanf("%d", & r);
+    printf("\n\nEnter the Max Matrix for each process : ");
+    for (i = 0; i < p; i++) {
+        printf("\nFor process %d : ", i + 1);
+        for (j = 0; j < r; j++)
+            scanf("%d", & Max[i][j]);
+    }
+    printf("\n\nEnter the allocation for each process : ");
+    for (i = 0; i < p; i++) {
+        printf("\nFor process %d : ", i + 1);
+        for (j = 0; j < r; j++)
+            scanf("%d", & alloc[i][j]);
+    }
+    printf("\n\nEnter the Available Resources : ");
+    for (i = 0; i < r; i++)
+        scanf("%d", & avail[i]);
+    for (i = 0; i < p; i++)
+        for (j = 0; j < r; j++)
+            need[i][j] = Max[i][j] - alloc[i][j];
+    do {
+        printf("\n Max matrix:\tAllocation matrix:\n");
+        for (i = 0; i < p; i++) {
+            for (j = 0; j < r; j++)
+                printf("%d ", Max[i][j]);
+            printf("\t\t");
+            for (j = 0; j < r; j++)
+                printf("%d ", alloc[i][j]);
+            printf("\n");
+        }
+        process = -1;
+        for (i = 0; i < p; i++) {
+            if (completed[i] == 0) //if not completed
+            {
+                process = i;
+                for (j = 0; j < r; j++) {
+                    if (avail[j] < need[i][j]) {
+                        process = -1;
+                        break;
+                    }
+                }
+            }
+            if (process != -1)
+                break;
+        }
+        if (process != -1) {
+            printf("\nProcess %d runs to completion!", process + 1);
+            safeSequence[count] = process + 1;
+            count++;
+            for (j = 0; j < r; j++) {
+                avail[j] += alloc[process][j];
+                alloc[process][j] = 0;
+                Max[process][j] = 0;
+                completed[process] = 1;
+            }
+        }
+    } 
+    while (count != p && process != -1);
+    if (count == p) {
+        printf("\nThe system is in a safe state!!\n");
+        printf("Safe Sequence : < ");
+        for (i = 0; i < p; i++)
+            printf("%d ", safeSequence[i]);
+        printf(">\n");
+    }
+    else
+        printf("\nThe system is in an unsafe state!!");
+}
+
+```
+---
+
+
+### Question 34
+**Implement the First Fit, Best Fit and Worst Fit file allocation strategy.**
+**First Fit**
+```c
+#include<stdio.h>
+void main()
+{
+    int bsize[10], psize[10], bno, pno, flags[10], allocation[10], i, j;
+    for(i = 0; i < 10; i++)
+    {
+        flags[i] = 0;
+        allocation[i] = -1;
+    }
+    printf("Enter no. of blocks: ");
+    scanf("%d", &bno);
+    printf("\nEnter size of each block: ");
+    for(i = 0; i < bno; i++)
+    scanf("%d", &bsize[i]);
+    printf("\nEnter no. of processes: ");
+    scanf("%d", &pno);
+    printf("\nEnter size of each process: ");
+    for(i = 0; i < pno; i++)
+    scanf("%d", &psize[i]);
+    for(i = 0; i < pno; i++)
+    for(j = 0; j < bno; j++)
+    if(flags[j] == 0 && bsize[j] >= psize[i])
+    {
+        allocation[j] = i;
+        flags[j] = 1;
+        break;
+    }
+    printf("\nBlock no.\tsize\t\tprocess no.\t\tsize");
+    for(i = 0; i < bno; i++)
+    {
+        printf("\n%d\t\t%d\t\t", i+1, bsize[i]);
+        if(flags[i] == 1)
+            printf("%d\t\t\t%d",allocation[i]+1,psize[allocation[i]]);
+        else
+            printf("Not allocated");
+    }
+}
+```
+**Best Fit**
+```c
+#include<stdio.h>
+void main()
+{
+    int fragment[20],b[20],p[20],i,j,nb,np,temp,lowest=9999;
+    static int barray[20],parray[20];
+    printf("\nEnter the number of blocks: ");
+    scanf("%d",&nb);
+    printf("Enter the number of processes: ");
+    scanf("%d",&np);
+    printf("\nEnter the size of the blocks:-\n");
+    for(i=1;i<=nb;i++)
+    {
+        printf("Block no.%d: ",i);
+        scanf("%d",&b[i]);
+    }
+    printf("\nEnter the size of the processes:-\n");
+    for(i=1;i<=np;i++)
+    {
+        printf("Process no.%d :",i);
+        scanf("%d",&p[i]);
+    }
+    for(i=1;i<=np;i++)
+    {
+        for(j=1;j<=nb;j++)
+        {
+            if(barray[j]!=1)
+            {
+                temp=b[j]-p[i];
+                if(temp>=0)
+                if(lowest>temp)
+                {
+                    parray[i]=j;
+                    lowest=temp;
+                }
+            }
+        }
+        fragment[i]=lowest;
+        barray[parray[i]]=1;
+        lowest=10000;
+    }
+    printf("\nProcess_no\tProcess_size\tBlock_no\tBlock_size\tFragment");
+    for(i=1;i<=np && parray[i]!=0;i++)
+        printf("\n%d\t\t%d\t\t%d\t\t%d\t\t%d",i,p[i],parray[i],b[parray[i]],fragment[i]);
+    printf("\n");
+}
+
+```
+**Worst Fit**
+```c
+#include<stdio.h>
+int main()
+{
+    int fragments[10], blocks[10], files[10];
+    int m, n, number_of_blocks, number_of_files, temp, top = 0;
+    static int block_arr[10], file_arr[10];
+    printf("\nEnter the Total Number of Blocks:\t");
+    scanf("%d",&number_of_blocks);
+    printf("Enter the Total Number of Files:\t");
+    scanf("%d",&number_of_files);
+    printf("\nEnter the Size of the Blocks:\n");
+    for(m = 0; m < number_of_blocks; m++)
+    {
+        printf("Block No.[%d]:\t", m + 1);
+        scanf("%d", &blocks[m]);
+    }
+    printf("Enter the Size of the Files:\n");
+    for(m = 0; m < number_of_files; m++)
+    {
+        printf("File No.[%d]:\t", m + 1);
+        scanf("%d", &files[m]);
+    }
+    for(m = 0; m < number_of_files; m++)
+    {
+        for(n = 0; n < number_of_blocks; n++)
+        {
+            if(block_arr[n] != 1)
+            {
+                temp = blocks[n] - files[m];
+                if(temp >= 0)
+                {
+                    if(top < temp)
+                    {
+                        file_arr[m] = n;
+                        top = temp;
+                    }
+                }
+            }
+            fragments[m] = top;
+            block_arr[file_arr[m]] = 1;
+            top = 0;
+        }
+    }
+    printf("\nFile Number\tFile Size\tBlock Number\tBlock Size\tFragment");
+    for(m = 0; m < number_of_files; m++)
+    {
+        printf("\n%d\t\t%d\t\t%d\t\t%d\t\t%d", m, files[m], file_arr[m], blocks[file_arr[m]],
+        fragments[m]);
+    }
+    printf("\n");
+    return 0;
+}
+
+```
+---
